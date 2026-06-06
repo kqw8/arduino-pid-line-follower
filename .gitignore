@@ -1,0 +1,13 @@
+# Compiled output
+build/
+*.hex
+*.elf
+*.bin
+*.eep
+
+# OS and editor files
+.DS_Store
+.vscode/
+
+# Local files, not part of this project
+PID_Control/

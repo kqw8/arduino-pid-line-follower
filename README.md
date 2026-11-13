@@ -1,3 +1,5 @@
+English | [简体中文](README.zh-CN.md)
+
 # Arduino PID Line Follower — Two Approaches
 
 A tutorial for anyone learning to build a PID line-following robot, a classic entry point into
@@ -58,20 +60,36 @@ you eventually meet the same trade-off no matter how you adjust them:
 - Strong enough for the corners, and the straights oscillate.
 - Smooth on the straights, and the corners understeer and cut the line.
 
-A middle setting exists, but it leaves the robot slow. No single set of gains can be both calm on a
-straight and aggressive in a corner, because the two situations call for opposite behavior. The two
-approaches below each resolve this in a different way, so the robot can run smoothly and quickly on
-both.
+A compromise setting may require a lower speed. Fixed gains can work well on some tracks, but adapting
+the response helps balance gentle steering on straights with stronger steering in tight corners. The
+two approaches below address that trade-off in different ways.
 
 ## Setup
 
-My robot is an Arduino Mega 2560 driving two TT gear motors through the Arduino motor shield library,
+My robot is an Arduino Mega 2560 driving two TT gear motors through an Adafruit Motor Shield,
 with a reflectance array of seven photoresistors across the front. The hardware is otherwise
 unremarkable, so this guide concentrates on the algorithms and tuning rather than the build.
 
-The code is plain C++ `.ino` sketches. On an Arduino-based robot they run as is; set the pins and
-board options at the top of each sketch to match your wiring. On a different platform the code may not
-transfer directly, but the techniques described below apply to any line-following controller.
+The code consists of two standalone C++ `.ino` sketches:
+
+- [Dynamic PID](dynamic_pid/dynamic_pid.ino)
+- [Two-Mode PID](two_mode_pid/two_mode_pid.ino)
+
+Open one sketch in the Arduino IDE, install the **Adafruit Motor Shield V2 Library** and its required
+dependencies through Library Manager, then select your board and port. The sketches include `Wire.h`
+and `Adafruit_MotorShield.h`. Adjust the hardware constants before uploading: the defaults use analog
+pins A8–A14, shield ports 1 and 2, and seven sensors ordered left to right. Other boards need compatible
+pins and hardware; another motor driver requires changes to the motor code.
+
+At startup, the LED blinks while you position the entire sensor array over white, then stays solid
+while sampling. Repeat over black for the second phase. Calibration assumes black produces a higher
+analog reading than white; the code forces a minimum difference of 20 counts rather than detecting
+reversed sensor polarity. Each phase averages 200 readings per sensor, with 2000 ms for positioning.
+The robot begins driving after calibration. Start at low speed and check motor directions first.
+
+Wheel commands are PWM values, not measured wheel speeds. Both loops clamp wheel commands to
+0–`MAX_WHEEL`, so they do not command reverse motion or pivot turns. If the line is lost, the robot
+holds the last position indefinitely; there is no lost-line stop timeout.
 
 ## Going beyond a basic PID
 
@@ -136,11 +154,11 @@ drives straight off the track. Instead, when the total signal is too low to trus
 the last valid position. Since the line was last seen toward one side, the robot keeps steering that
 way and usually reacquires it.
 
-**8. Fixed-rate control loop (200 Hz).** Arduino's `loop()` runs as fast as it can, and each pass
-takes a slightly different amount of time. Because D divides by `dt`, a varying `dt` makes D erratic,
-and tuning drifts if the loop rate changes. Gating the loop to a steady rate (skip until `LOOP_US`
-has elapsed) keeps every cycle the same length, so `dt` is constant, D is stable, and tuning is
-repeatable. This is why the derivative uses a fixed `DT`.
+**8. Rate-gated control loop (target: 200 Hz).** Arduino's `loop()` runs as fast as it can. The sketches
+skip updates until `LOOP_US` has elapsed and use a fixed `DT` for the derivative and integral. At
+200 Hz, this assumes a 5 ms update interval. This is a target, not a real-time guarantee: sensor reads
+and motor communication can delay updates. If execution exceeds the interval, actual timing differs
+from `DT`, affecting the gains' effective behavior.
 
 #### Practical conveniences
 
@@ -198,6 +216,7 @@ fixed tunes. Comparing the two is the point of this repository.
 | `MOTOR_LEFT_PORT`, `MOTOR_RIGHT_PORT` | Adafruit shield ports for each wheel |
 | `LEFT_MOTOR_REVERSED`, `RIGHT_MOTOR_REVERSED` | reverse a wheel that spins the wrong way |
 | `SENSOR_WEIGHTS` | position weight of each sensor; widen the ends for sharper edge response |
+| `MAX_POSITION` | position clamp and dynamic steering normalization (default: 3.0) |
 | `SENSOR_DEADBAND` | readings below this are treated as white/noise |
 | `LINE_LOST_LEVEL` | total signal below this means the line is lost |
 | `D_SMOOTHING` | derivative low-pass, 0..1 (lower is smoother, with more lag) |
@@ -280,6 +299,10 @@ sensor pulls the computed position a long way and produces a large, unwanted ste
 errors are easy to come by: a noisy or slightly miscalibrated outer sensor, ambient light leaking in,
 or a chassis that flexes or tilts so the array shifts relative to the line. With modest weights the
 same reading error barely moves the position; with large weights it can dominate.
+
+Both supplied sketches clamp position to ±`MAX_POSITION` (3.0 by default). Increasing outer weights
+alone therefore reaches that limit sooner rather than producing an unlimited position value. Revisit
+the clamp, gains, and (for Dynamic PID) shaping normalization together when experimenting.
 
 So the method is only as reliable as your edge sensors and your mechanical stability. If the sensors
 are accurate and consistent and the chassis is rigid, it is a clean and minimal way to achieve strong
